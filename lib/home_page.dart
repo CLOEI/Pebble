@@ -43,11 +43,11 @@ class HomePage extends StatelessWidget {
               children: [
                 const SizedBox(height: 56),
                 Row(
-                  children: List.generate(5, (i) {
+                  children: List.generate(4, (i) {
                     final isActive = i == 0;
                     return Expanded(
                       child: Container(
-                        margin: EdgeInsets.only(right: i < 4 ? 8 : 0),
+                        margin: EdgeInsets.only(right: i < 3 ? 8 : 0),
                         height: 6,
                         decoration: BoxDecoration(
                           color: isActive ? Colors.white : Colors.transparent,

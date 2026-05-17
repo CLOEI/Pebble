@@ -32,7 +32,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
         children: [
           // Blurred background
           ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            imageFilter: ImageFilter.blur(sigmaX: 160, sigmaY: 160, tileMode: TileMode.clamp),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -63,11 +63,11 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                   const SizedBox(height: 16),
                   // Progress pills
                   Row(
-                    children: List.generate(5, (i) {
+                    children: List.generate(4, (i) {
                       final isActive = i <= 1;
                       return Expanded(
                         child: Container(
-                          margin: EdgeInsets.only(right: i < 4 ? 8 : 0),
+                          margin: EdgeInsets.only(right: i < 3 ? 8 : 0),
                           height: 6,
                           decoration: BoxDecoration(
                             color: isActive ? Colors.white : Colors.transparent,

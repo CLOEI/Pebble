@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'survey_page.dart';
 
 class ProfileSetupPage extends StatefulWidget {
   final String name;
@@ -88,7 +89,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         fit: StackFit.expand,
         children: [
           ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            imageFilter: ImageFilter.blur(sigmaX: 160, sigmaY: 160, tileMode: TileMode.clamp),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -119,11 +120,11 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                   const SizedBox(height: 16),
                   // Progress pills — advances with each step
                   Row(
-                    children: List.generate(5, (i) {
-                      final isActive = i <= 2 + _step;
+                    children: List.generate(4, (i) {
+                      final isActive = i <= 2;
                       return Expanded(
                         child: Container(
-                          margin: EdgeInsets.only(right: i < 4 ? 8 : 0),
+                          margin: EdgeInsets.only(right: i < 3 ? 8 : 0),
                           height: 6,
                           decoration: BoxDecoration(
                             color: isActive ? Colors.white : Colors.transparent,
@@ -286,7 +287,11 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                                 if (_step < 2) {
                                   setState(() => _step++);
                                 } else {
-                                  // TODO: finish onboarding
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const SurveyPage(),
+                                    ),
+                                  );
                                 }
                               },
                             ),
