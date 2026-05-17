@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'profile_setup_page.dart';
 
 class CharacterCreationPage extends StatefulWidget {
   const CharacterCreationPage({super.key});
@@ -269,7 +270,17 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                       // Join button overlapping card bottom
                       Positioned(
                         bottom: -20,
-                        child: ClipRRect(
+                        child: GestureDetector(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ProfileSetupPage(
+                                name: _nameController.text,
+                                pebbleIndex: _selectedPebble,
+                                expressionIndex: _selectedExpression,
+                              ),
+                            ),
+                          ),
+                          child: ClipRRect(
                           borderRadius: BorderRadius.circular(50),
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -294,6 +305,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                               ),
                             ),
                           ),
+                        ),
                         ),
                       ),
                     ],
