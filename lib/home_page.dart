@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'character_creation_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -85,7 +86,13 @@ class HomePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 40),
-                ClipRRect(
+                GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CharacterCreationPage(),
+                    ),
+                  ),
+                  child: ClipRRect(
                   borderRadius: BorderRadius.circular(50),
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -110,6 +117,7 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
                   ),
+                ),
                 ),
               ],
             ),

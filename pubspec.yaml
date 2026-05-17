@@ -27,3 +27,5 @@ flutter:
 
   assets:
     - assets/
+    - assets/Expression/
+    - assets/Pebbles with Leg/
