@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'services/user_storage.dart';
 
 class SurveyPage extends StatefulWidget {
   const SurveyPage({super.key});
@@ -162,7 +163,11 @@ class _SurveyPageState extends State<SurveyPage> {
                   const SizedBox(height: 24),
                   // Done button
                   Center(
-                    child: ClipRRect(
+                    child: GestureDetector(
+                      onTap: () async {
+                        await UserStorage.saveSurvey(_selected.toList());
+                      },
+                      child: ClipRRect(
                       borderRadius: BorderRadius.circular(50),
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -187,6 +192,7 @@ class _SurveyPageState extends State<SurveyPage> {
                           ),
                         ),
                       ),
+                    ),
                     ),
                   ),
                   const SizedBox(height: 16),

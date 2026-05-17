@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'profile_setup_page.dart';
+import 'services/user_storage.dart';
 
 class CharacterCreationPage extends StatefulWidget {
   const CharacterCreationPage({super.key});
@@ -271,15 +272,23 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                       Positioned(
                         bottom: -20,
                         child: GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ProfileSetupPage(
-                                name: _nameController.text,
-                                pebbleIndex: _selectedPebble,
-                                expressionIndex: _selectedExpression,
+                          onTap: () async {
+                            await UserStorage.saveCharacter(
+                              name: _nameController.text,
+                              pebbleIndex: _selectedPebble,
+                              expressionIndex: _selectedExpression,
+                            );
+                            if (!context.mounted) return;
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ProfileSetupPage(
+                                  name: _nameController.text,
+                                  pebbleIndex: _selectedPebble,
+                                  expressionIndex: _selectedExpression,
+                                ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                           child: ClipRRect(
                           borderRadius: BorderRadius.circular(50),
                           child: BackdropFilter(

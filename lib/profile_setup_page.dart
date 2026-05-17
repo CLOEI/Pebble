@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'survey_page.dart';
+import 'services/user_storage.dart';
 
 class ProfileSetupPage extends StatefulWidget {
   final String name;
@@ -283,10 +284,17 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                               ),
                             _PillButton(
                               label: _step == 2 ? 'Done !' : 'Next',
-                              onTap: () {
+                              onTap: () async {
                                 if (_step < 2) {
                                   setState(() => _step++);
                                 } else {
+                                  await UserStorage.saveProfile(
+                                    gender: _gender,
+                                    age: _values[0],
+                                    weight: _values[1],
+                                    height: _values[2],
+                                  );
+                                  if (!context.mounted) return;
                                   Navigator.of(context).push(
                                     MaterialPageRoute(
                                       builder: (_) => const SurveyPage(),
