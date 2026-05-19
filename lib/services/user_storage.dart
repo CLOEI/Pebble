@@ -10,8 +10,13 @@ class UserStorage {
   static const _keyHeight = 'height';
   static const _keySurvey = 'survey_selections';
   static const _keyOnboardingDone = 'onboarding_complete';
+  static const _keyFtueDate = 'ftue_date';
+  static const _keyActiveDays = 'active_days';
+  static const _keyExp = 'exp';
 
   static final _prefs = SharedPreferencesAsync();
+
+  // ── Onboarding ──────────────────────────────────────────────────────────
 
   static Future<void> saveCharacter({
     required String name,
@@ -40,12 +45,48 @@ class UserStorage {
       _keySurvey,
       selections.map((e) => e.toString()).join(','),
     );
+    await _saveFtueDate();
     await _prefs.setBool(_keyOnboardingDone, true);
+  }
+
+  static Future<void> _saveFtueDate() async {
+    await _prefs.setString(_keyFtueDate, _dateKey(DateTime.now()));
   }
 
   static Future<bool> isOnboardingComplete() async {
     return await _prefs.getBool(_keyOnboardingDone) ?? false;
   }
+
+  // ── Streak ───────────────────────────────────────────────────────────────
+
+  static Future<String?> getFtueDate() async {
+    return _prefs.getString(_keyFtueDate);
+  }
+
+  static Future<Set<String>> getActiveDays() async {
+    final raw = await _prefs.getString(_keyActiveDays) ?? '';
+    if (raw.isEmpty) return {};
+    return raw.split(',').toSet();
+  }
+
+  static Future<void> markDayActive(String dateStr) async {
+    final days = await getActiveDays();
+    days.add(dateStr);
+    await _prefs.setString(_keyActiveDays, days.join(','));
+  }
+
+  // ── EXP ──────────────────────────────────────────────────────────────────
+
+  static Future<int> getExp() async {
+    return await _prefs.getInt(_keyExp) ?? 0;
+  }
+
+  static Future<void> addExp(int amount) async {
+    final current = await getExp();
+    await _prefs.setInt(_keyExp, current + amount);
+  }
+
+  // ── Full load ────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> load() async {
     final surveyRaw = await _prefs.getString(_keySurvey) ?? '';
@@ -62,4 +103,9 @@ class UserStorage {
           : surveyRaw.split(',').map(int.parse).toList(),
     };
   }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  static String _dateKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'home_page.dart';
+import 'main_page.dart';
 import 'services/user_storage.dart';
 
 void main() async {
@@ -17,7 +18,7 @@ class MainApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: onboardingDone
-          ? const Placeholder() // TODO: replace with main app screen
+          ? const MainPage()
           : const HomePage(),
     );
   }

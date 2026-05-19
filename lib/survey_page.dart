@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'services/user_storage.dart';
+import 'main_page.dart';
 
 class SurveyPage extends StatefulWidget {
   const SurveyPage({super.key});
@@ -166,6 +167,14 @@ class _SurveyPageState extends State<SurveyPage> {
                     child: GestureDetector(
                       onTap: () async {
                         await UserStorage.saveSurvey(_selected.toList());
+                        if (context.mounted) {
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => const MainPage(),
+                            ),
+                            (_) => false,
+                          );
+                        }
                       },
                       child: ClipRRect(
                       borderRadius: BorderRadius.circular(50),
