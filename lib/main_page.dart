@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/todo_tab.dart';
 import 'tabs/calories_tab.dart';
+import 'tabs/report_tab.dart';
 import 'tabs/profile_tab.dart';
 
 class MainPage extends StatefulWidget {
@@ -14,12 +15,13 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _tab = 0;
 
-  static const _tabs = [HomeTab(), TodoTab(), CaloriesTab(), ProfileTab()];
+  static const _tabs = [HomeTab(), TodoTab(), CaloriesTab(), ReportTab(), ProfileTab()];
 
   static const _navItems = [
     (icon: Icons.home_rounded, label: 'Home'),
     (icon: Icons.check_circle_outline_rounded, label: 'Todo'),
     (icon: Icons.local_fire_department_rounded, label: 'Calories'),
+    (icon: Icons.bar_chart_rounded, label: 'Report'),
     (icon: Icons.person_rounded, label: 'Profile'),
   ];
 
