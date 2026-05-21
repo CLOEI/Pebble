@@ -774,7 +774,7 @@ class _HomeTabState extends State<HomeTab> {
           final filledWidth = totalWidth * progress;
 
           return SizedBox(
-            height: 52,
+            height: 32,
             child: Stack(
               children: [
                 // Background — full blue pill
@@ -802,7 +802,7 @@ class _HomeTabState extends State<HomeTab> {
                     child: Text(
                       '$_expInLevel Exp',
                       style: GoogleFonts.inter(
-                        fontSize: 16,
+                        fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
@@ -810,7 +810,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 ),
                 Positioned(
-                  right: 16,
+                  right: 12,
                   top: 0,
                   bottom: 0,
                   child: Align(
@@ -821,16 +821,16 @@ class _HomeTabState extends State<HomeTab> {
                         Text(
                           '$_expPerLevel Exp',
                           style: GoogleFonts.inter(
-                            fontSize: 16,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 4),
                         const Icon(
                           Icons.card_giftcard_rounded,
                           color: Colors.white,
-                          size: 20,
+                          size: 12,
                         ),
                       ],
                     ),
