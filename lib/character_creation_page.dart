@@ -16,7 +16,8 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
   int _selectedExpression = 0;
   final _nameController = TextEditingController();
 
-  static const int _total = 12;
+  static const int _pebbleCount = 5;
+  static const int _expressionCount = 12;
 
   @override
   void dispose() {
@@ -117,8 +118,8 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                                         icon: Icons.chevron_left,
                                         onTap: () => setState(() {
                                           _selectedPebble =
-                                              (_selectedPebble - 1 + _total) %
-                                              _total;
+                                              (_selectedPebble - 1 + _pebbleCount) %
+                                              _pebbleCount;
                                         }),
                                       ),
                                       Expanded(
@@ -163,7 +164,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                                         icon: Icons.chevron_right,
                                         onTap: () => setState(() {
                                           _selectedPebble =
-                                              (_selectedPebble + 1) % _total;
+                                              (_selectedPebble + 1) % _pebbleCount;
                                         }),
                                       ),
                                     ],
@@ -175,7 +176,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                                   height: 76,
                                   child: ListView.builder(
                                     scrollDirection: Axis.horizontal,
-                                    itemCount: _total,
+                                    itemCount: _expressionCount,
                                     itemBuilder: (context, i) {
                                       final isSelected =
                                           i == _selectedExpression;
@@ -187,7 +188,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                                           width: 68,
                                           height: 68,
                                           margin: EdgeInsets.only(
-                                            right: i < _total - 1 ? 10 : 0,
+                                            right: i < _expressionCount - 1 ? 10 : 0,
                                           ),
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,

@@ -12,6 +12,9 @@ dependencies:
   google_fonts: ^6.2.1
   shared_preferences: ^2.3.0
   fl_chart: ^0.69.0
+  pedometer: ^4.0.2
+  sensors_plus: ^6.0.1
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
@@ -31,3 +34,6 @@ flutter:
     - assets/
     - assets/Expression/
     - assets/Pebbles with Leg/
+    - assets/snacks.json
+    - assets/exercises.json
+    - assets/weekly_plan.json

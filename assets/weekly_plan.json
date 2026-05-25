@@ -1,0 +1,8 @@
+[
+  {"week":1,"level":"Beginner","focus":"Joint adaptation (very light)","exerciseIds":["EX-001","EX-005","EX-003"],"dailyTargetMin":18},
+  {"week":2,"level":"Beginner","focus":"Cardio adaptation (light)","exerciseIds":["EX-002","EX-004","EX-006","EX-007"],"dailyTargetMin":25},
+  {"week":3,"level":"Intermediate","focus":"Cardio endurance (medium)","exerciseIds":["EX-007","EX-001","EX-004"],"dailyTargetMin":30},
+  {"week":4,"level":"Intermediate","focus":"Impact transition (medium-heavy)","exerciseIds":["EX-008","EX-002","EX-003"],"dailyTargetMin":32},
+  {"week":5,"level":"Hard","focus":"Fat burn (heavy)","exerciseIds":["EX-008","EX-009","EX-010","EX-015"],"dailyTargetMin":38},
+  {"week":6,"level":"Hard","focus":"Power & stamina (very heavy)","exerciseIds":["EX-013","EX-011","EX-012","EX-014"],"dailyTargetMin":42}
+]

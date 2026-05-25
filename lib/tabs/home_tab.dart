@@ -40,10 +40,14 @@ class _HomeTabState extends State<HomeTab> {
     super.initState();
     _weekController = PageController();
     _loadData();
+    UserStorage.changes.addListener(_onStorageChanged);
   }
+
+  void _onStorageChanged() => _loadData();
 
   @override
   void dispose() {
+    UserStorage.changes.removeListener(_onStorageChanged);
     _weekController.dispose();
     super.dispose();
   }

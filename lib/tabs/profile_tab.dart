@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/user_storage.dart';
+import '../customize_page.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -56,12 +57,32 @@ class _ProfileTabState extends State<ProfileTab> {
     super.initState();
     _weekController = PageController();
     _loadData();
+    UserStorage.changes.addListener(_onStorageChanged);
   }
+
+  void _onStorageChanged() => _loadData();
 
   @override
   void dispose() {
+    UserStorage.changes.removeListener(_onStorageChanged);
     _weekController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openCustomize() async {
+    if (_userData == null) return;
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CustomizePage(
+          initialPebble: _userData!['pebbleIndex'] as int? ?? 0,
+          initialExpression: _userData!['expressionIndex'] as int? ?? 0,
+          name: _userData!['name'] as String? ?? '',
+        ),
+      ),
+    );
+    if (result == true) {
+      await _loadData();
+    }
   }
 
   Future<void> _loadData() async {
@@ -231,15 +252,14 @@ class _ProfileTabState extends State<ProfileTab> {
                 height: 155,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.layers_rounded,
-                          color: Colors.black26, size: 24),
-                      Icon(Icons.person_add_rounded,
-                          color: Colors.black26, size: 24),
-                    ],
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: GestureDetector(
+                      onTap: _openCustomize,
+                      behavior: HitTestBehavior.opaque,
+                      child: const Icon(Icons.checkroom_rounded,
+                          color: Colors.black54, size: 26),
+                    ),
                   ),
                 ),
               ),
@@ -418,25 +438,28 @@ class _ProfileTabState extends State<ProfileTab> {
         // Pebble — overflows above card
         Positioned(
           top: 0,
-          child: SizedBox(
-            width: 180,
-            height: 190,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Image.asset(
-                  'assets/Pebbles with Leg/${pebble + 1}.png',
-                  fit: BoxFit.contain,
-                ),
-                FractionallySizedBox(
-                  widthFactor: 0.6,
-                  heightFactor: 0.6,
-                  child: Image.asset(
-                    'assets/Expression/${expression + 1}.png',
+          child: GestureDetector(
+            onTap: _openCustomize,
+            child: SizedBox(
+              width: 180,
+              height: 190,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Image.asset(
+                    'assets/Pebbles with Leg/${pebble + 1}.png',
                     fit: BoxFit.contain,
                   ),
-                ),
-              ],
+                  FractionallySizedBox(
+                    widthFactor: 0.6,
+                    heightFactor: 0.6,
+                    child: Image.asset(
+                      'assets/Expression/${expression + 1}.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

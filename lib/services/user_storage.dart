@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UserStorage {
@@ -13,8 +15,14 @@ class UserStorage {
   static const _keyFtueDate = 'ftue_date';
   static const _keyActiveDays = 'active_days';
   static const _keyExp = 'exp';
+  static const _keyUnlockedPebbles = 'unlocked_pebbles';
+
+  static const _defaultUnlockedPebbles = {0, 1, 2, 3, 4};
 
   static final _prefs = SharedPreferencesAsync();
+
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
+  static void _notifyChanged() => changes.value++;
 
   // ── Onboarding ──────────────────────────────────────────────────────────
 
@@ -26,6 +34,7 @@ class UserStorage {
     await _prefs.setString(_keyName, name);
     await _prefs.setInt(_keyPebble, pebbleIndex);
     await _prefs.setInt(_keyExpression, expressionIndex);
+    _notifyChanged();
   }
 
   static Future<void> saveProfile({
@@ -73,6 +82,106 @@ class UserStorage {
     final days = await getActiveDays();
     days.add(dateStr);
     await _prefs.setString(_keyActiveDays, days.join(','));
+  }
+
+  // ── Daily kcal + history ────────────────────────────────────────────────
+
+  static String _kcalKey(DateTime d) => 'kcal_consumed_${_dateKey(d)}';
+  static String _historyKey(DateTime d) => 'history_${_dateKey(d)}';
+
+  static Future<int> getKcalConsumed(DateTime day) async {
+    return await _prefs.getInt(_kcalKey(day)) ?? 0;
+  }
+
+  static Future<List<Map<String, dynamic>>> getHistory(DateTime day) async {
+    final raw = await _prefs.getString(_historyKey(day)) ?? '';
+    if (raw.isEmpty) return [];
+    return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+  }
+
+  static Future<void> addConsumption({
+    required String name,
+    required int kcal,
+    DateTime? when,
+  }) async {
+    final day = when ?? DateTime.now();
+    final current = await getKcalConsumed(day);
+    await _prefs.setInt(_kcalKey(day), current + kcal);
+
+    final history = await getHistory(day);
+    history.insert(0, {
+      'name': name,
+      'kcal': kcal,
+      'ts': day.toIso8601String(),
+    });
+    await _prefs.setString(_historyKey(day), jsonEncode(history));
+  }
+
+  // ── Daily workout log + kcal burned ─────────────────────────────────────
+
+  static String _burnedKey(DateTime d) => 'kcal_burned_${_dateKey(d)}';
+  static String _workoutKey(DateTime d) => 'workout_log_${_dateKey(d)}';
+
+  static Future<int> getKcalBurned(DateTime day) async {
+    return await _prefs.getInt(_burnedKey(day)) ?? 0;
+  }
+
+  static Future<List<Map<String, dynamic>>> getWorkoutLog(DateTime day) async {
+    final raw = await _prefs.getString(_workoutKey(day)) ?? '';
+    if (raw.isEmpty) return [];
+    return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+  }
+
+  static Future<void> addWorkout({
+    required String exerciseId,
+    required String name,
+    required int durationSec,
+    required int kcal,
+    DateTime? when,
+  }) async {
+    final day = when ?? DateTime.now();
+    final current = await getKcalBurned(day);
+    await _prefs.setInt(_burnedKey(day), current + kcal);
+
+    final log = await getWorkoutLog(day);
+    log.insert(0, {
+      'exerciseId': exerciseId,
+      'name': name,
+      'durationSec': durationSec,
+      'kcal': kcal,
+      'ts': day.toIso8601String(),
+    });
+    await _prefs.setString(_workoutKey(day), jsonEncode(log));
+    _notifyChanged();
+  }
+
+  static Future<Map<String, dynamic>?> removeConsumptionAt(
+    int index, {
+    DateTime? when,
+  }) async {
+    final day = when ?? DateTime.now();
+    final history = await getHistory(day);
+    if (index < 0 || index >= history.length) return null;
+    final removed = history.removeAt(index);
+    final kcal = (removed['kcal'] as num).toInt();
+    final current = await getKcalConsumed(day);
+    await _prefs.setInt(_kcalKey(day), (current - kcal).clamp(0, 1 << 30));
+    await _prefs.setString(_historyKey(day), jsonEncode(history));
+    return removed;
+  }
+
+  // ── Unlocked pebbles ────────────────────────────────────────────────────
+
+  static Future<Set<int>> getUnlockedPebbles() async {
+    final raw = await _prefs.getString(_keyUnlockedPebbles);
+    if (raw == null || raw.isEmpty) return {..._defaultUnlockedPebbles};
+    return raw.split(',').map(int.parse).toSet();
+  }
+
+  static Future<void> unlockPebble(int index) async {
+    final set = await getUnlockedPebbles();
+    set.add(index);
+    await _prefs.setString(_keyUnlockedPebbles, set.join(','));
   }
 
   // ── EXP ──────────────────────────────────────────────────────────────────

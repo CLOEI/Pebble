@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/user_storage.dart';
-
-class _Challenge {
-  final String title;
-  final String detail;
-  final String timeLeft;
-  final int exp;
-  _Challenge(this.title, this.detail, this.timeLeft, this.exp);
-}
+import '../services/workout_repository.dart';
+import '../workout_detail_page.dart';
 
 class TodoTab extends StatefulWidget {
   const TodoTab({super.key});
@@ -25,36 +19,60 @@ class _TodoTabState extends State<TodoTab> {
   int _currentWeekPage = 0;
   late final PageController _weekController;
 
-  final int _kcalBurned = 0;
+  int _kcalBurned = 0;
+  int _burnGoal = 200;
+  List<Map<String, dynamic>> _workoutLog = [];
+  WeekPlan? _weekPlan;
+  List<Exercise> _todayExercises = [];
 
-  static const _burnGoal = 2000;
   static const _expPerLevel = 500;
   static const _dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-  final List<String> _completedTasks = [
-    'Mop the floor',
-    'Walk to office',
-    '3x Jumping jack',
-  ];
-
-  final List<_Challenge> _challenges = [
-    _Challenge('Consume kcal less than limit', '3000< kcal', '2 days left', 100),
-    _Challenge('Burn 300 kcal', '300 kcal', 'Today', 50),
-    _Challenge('15 mins incline walk', '150 kcal', '4 days left', 50),
-  ];
-
   int get _level => (_exp ~/ _expPerLevel) + 1;
   int get _expInLevel => _exp % _expPerLevel;
+
+  int _computeBurnGoal(
+    List<Exercise> exercises,
+    Map<String, dynamic> userData,
+  ) {
+    final weight = userData['weight'] as int? ?? 70;
+    if (exercises.isEmpty) return 200;
+    final total = exercises.fold<int>(
+      0,
+      (sum, e) => sum + e.kcalForWeight(weight),
+    );
+    return total.clamp(100, 5000);
+  }
+
+  bool _isCompleted(String exerciseId) =>
+      _workoutLog.any((w) => w['exerciseId'] == exerciseId);
+
+  Future<void> _openExercise(Exercise ex) async {
+    final weight = (_userData?['weight'] as int?) ?? 70;
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            WorkoutDetailPage(exercise: ex, weightKg: weight),
+      ),
+    );
+    if (result == true) {
+      await _loadData();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _weekController = PageController();
     _loadData();
+    UserStorage.changes.addListener(_onStorageChanged);
   }
+
+  void _onStorageChanged() => _loadData();
 
   @override
   void dispose() {
+    UserStorage.changes.removeListener(_onStorageChanged);
     _weekController.dispose();
     super.dispose();
   }
@@ -64,10 +82,20 @@ class _TodoTabState extends State<TodoTab> {
     final activeDays = await UserStorage.getActiveDays();
     final ftueDateStr = await UserStorage.getFtueDate();
     final exp = await UserStorage.getExp();
+    final exercises = await WorkoutRepository.loadExercises();
+    final plans = await WorkoutRepository.loadPlan();
+    final today = DateTime.now();
+    final kcalBurned = await UserStorage.getKcalBurned(today);
+    final log = await UserStorage.getWorkoutLog(today);
 
     final ftueDate =
         ftueDateStr != null ? DateTime.parse(ftueDateStr) : DateTime.now();
     final weekCount = _weekCount(ftueDate);
+
+    final workoutWeek = WorkoutRepository.currentWeek(ftueDate);
+    final plan = WorkoutRepository.planForWeek(plans, workoutWeek);
+    final todayExercises =
+        WorkoutRepository.exercisesByIds(exercises, plan.exerciseIds);
 
     setState(() {
       _userData = userData;
@@ -75,6 +103,11 @@ class _TodoTabState extends State<TodoTab> {
       _ftueDate = ftueDate;
       _exp = exp;
       _currentWeekPage = weekCount - 1;
+      _kcalBurned = kcalBurned;
+      _workoutLog = log;
+      _weekPlan = plan;
+      _todayExercises = todayExercises;
+      _burnGoal = _computeBurnGoal(todayExercises, userData);
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -308,36 +341,60 @@ class _TodoTabState extends State<TodoTab> {
           ],
         ),
         const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: _completedTasks.map((task) {
-              return Container(
-                margin: const EdgeInsets.only(right: 10),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(50),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    width: 1.5,
-                    // dashed effect via StrokeDash is not natively supported;
-                    // solid border matches the overall style
+        if (_workoutLog.isEmpty)
+          Text(
+            'No workouts logged today',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: Colors.white.withValues(alpha: 0.55),
+            ),
+          )
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _workoutLog.map((task) {
+                final name = task['name'] as String;
+                final kcal = (task['kcal'] as num).toInt();
+                return Container(
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(50),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      width: 1.5,
+                    ),
                   ),
-                ),
-                child: Text(
-                  task,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.8),
-                    decoration: TextDecoration.lineThrough,
-                    decorationColor: Colors.white.withValues(alpha: 0.8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          decoration: TextDecoration.lineThrough,
+                          decorationColor:
+                              Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '+$kcal',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFFF5A623),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
-        ),
       ],
     );
   }
@@ -441,112 +498,170 @@ class _TodoTabState extends State<TodoTab> {
           );
         }),
         const SizedBox(height: 12),
-        // Challenge cards
-        ..._challenges.map((c) => _buildChallengeCard(c)),
-        const SizedBox(height: 12),
-        // Add custom activity
-        GestureDetector(
-          onTap: () {},
-          child: Container(
+        if (_weekPlan != null) ...[
+          Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.4), width: 1.5),
+                  color: Colors.white.withValues(alpha: 0.35), width: 1),
             ),
-            child: Column(
-              children: [
-                Text(
-                  'Add your own activities',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Icon(Icons.add, color: Colors.white, size: 28),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildChallengeCard(_Challenge c) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  c.title,
+                  'Week ${_weekPlan!.week} · ${_weekPlan!.level}',
                   style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      c.detail,
-                      style: GoogleFonts.inter(
-                          fontSize: 12, color: Colors.black45),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Container(
-                        width: 1,
-                        height: 12,
-                        color: Colors.black26,
-                      ),
-                    ),
-                    Text(
-                      c.timeLeft,
-                      style: GoogleFonts.inter(
-                          fontSize: 12, color: Colors.black45),
-                    ),
-                  ],
+                const SizedBox(height: 2),
+                Text(
+                  '${_weekPlan!.focus} · ${_weekPlan!.dailyTargetMin} min/day',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5A623),
-              borderRadius: BorderRadius.circular(50),
+        ],
+        // Exercise cards
+        ..._todayExercises.map((e) => _buildExerciseCard(e)),
+      ],
+    );
+  }
+
+  Widget _buildExerciseCard(Exercise e) {
+    final weight = (_userData?['weight'] as int?) ?? 70;
+    final kcal = e.kcalForWeight(weight);
+    final done = _isCompleted(e.id);
+    final (sensorLabel, sensorIcon) = switch (e.sensor) {
+      SensorType.step => ('Step', Icons.directions_walk_rounded),
+      SensorType.jump => ('Jump', Icons.fitness_center_rounded),
+      SensorType.timer => ('Timer', Icons.timer_rounded),
+    };
+    final categoryColor = e.category == 'high'
+        ? const Color(0xFFD9534F)
+        : const Color(0xFF2E7D32);
+
+    return GestureDetector(
+      onTap: done ? null : () => _openExercise(e),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: done ? Colors.white.withValues(alpha: 0.7) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-            child: Text(
-              '${c.exp} Exp',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (done)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 6),
+                          child: Icon(Icons.check_circle_rounded,
+                              size: 18, color: Color(0xFF2E7D32)),
+                        ),
+                      Flexible(
+                        child: Text(
+                          e.name,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                            decoration: done
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: categoryColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(50),
+                        ),
+                        child: Text(
+                          e.category == 'high' ? 'High' : 'Low',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: categoryColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(sensorIcon, size: 12, color: Colors.black45),
+                      const SizedBox(width: 3),
+                      Text(
+                        sensorLabel,
+                        style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.black45,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        e.detail,
+                        style: GoogleFonts.inter(
+                            fontSize: 11, color: Colors.black45),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5A623),
+                borderRadius: BorderRadius.circular(50),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.local_fire_department_rounded,
+                      color: Colors.white, size: 14),
+                  const SizedBox(width: 3),
+                  Text(
+                    '$kcal',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

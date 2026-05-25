@@ -1,6 +1,20 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:google_fonts/google_fonts.dart';
 import '../services/user_storage.dart';
+import '../services/snack_repository.dart';
+
+class _DragScrollBehavior extends MaterialScrollBehavior {
+  const _DragScrollBehavior();
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      };
+}
 
 class CaloriesTab extends StatefulWidget {
   const CaloriesTab({super.key});
@@ -19,20 +33,18 @@ class _CaloriesTabState extends State<CaloriesTab> {
   late final TextEditingController _searchController;
 
   int _kcalConsumed = 0;
-  final List<(String, int)> _history = [];
+  int _kcalBurned = 0;
+  List<Map<String, dynamic>> _history = [];
+
+  List<Snack> _allSnacks = [];
+  String? _selectedCategory;
+  int? _maxKcal = 400;
 
   static const _kcalLimit = 3000;
   static const _expPerLevel = 500;
   static const _dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-  static const _suggestions = [
-    ('Egg Soup', 50),
-    ('Fried Fish', 350),
-    ('Chicken Rice', 150),
-    ('Salad', 80),
-  ];
-
-  int get _kcalLeft => (_kcalLimit - _kcalConsumed).clamp(0, _kcalLimit);
+  int get _kcalLeft => _kcalLimit - _kcalConsumed;
   int get _level => (_exp ~/ _expPerLevel) + 1;
 
   @override
@@ -41,10 +53,14 @@ class _CaloriesTabState extends State<CaloriesTab> {
     _weekController = PageController();
     _searchController = TextEditingController(text: '400');
     _loadData();
+    UserStorage.changes.addListener(_onStorageChanged);
   }
+
+  void _onStorageChanged() => _loadData();
 
   @override
   void dispose() {
+    UserStorage.changes.removeListener(_onStorageChanged);
     _weekController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -55,6 +71,11 @@ class _CaloriesTabState extends State<CaloriesTab> {
     final activeDays = await UserStorage.getActiveDays();
     final ftueDateStr = await UserStorage.getFtueDate();
     final exp = await UserStorage.getExp();
+    final snacks = await SnackRepository.loadAll();
+    final today = DateTime.now();
+    final kcalConsumed = await UserStorage.getKcalConsumed(today);
+    final history = await UserStorage.getHistory(today);
+    final kcalBurned = await UserStorage.getKcalBurned(today);
 
     final ftueDate =
         ftueDateStr != null ? DateTime.parse(ftueDateStr) : DateTime.now();
@@ -66,6 +87,10 @@ class _CaloriesTabState extends State<CaloriesTab> {
       _ftueDate = ftueDate;
       _exp = exp;
       _currentWeekPage = weekCount - 1;
+      _allSnacks = snacks;
+      _kcalConsumed = kcalConsumed;
+      _kcalBurned = kcalBurned;
+      _history = history;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -111,9 +136,9 @@ class _CaloriesTabState extends State<CaloriesTab> {
   @override
   Widget build(BuildContext context) {
     if (_userData == null) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF5BA3D9),
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      return const ColoredBox(
+        color: Color(0xFF5BA3D9),
+        child: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
 
@@ -121,12 +146,10 @@ class _CaloriesTabState extends State<CaloriesTab> {
     final pebble = _userData!['pebbleIndex'] as int? ?? 0;
     final expression = _userData!['expressionIndex'] as int? ?? 0;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset('assets/Sky.png', fit: BoxFit.cover),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset('assets/Sky.png', fit: BoxFit.cover),
           Align(
             alignment: Alignment.bottomCenter,
             child: Image.asset(
@@ -229,7 +252,9 @@ class _CaloriesTabState extends State<CaloriesTab> {
                                   '$_kcalLeft',
                                   style: GoogleFonts.jersey20(
                                     fontSize: 72,
-                                    color: Colors.white,
+                                    color: _kcalLeft < 0
+                                        ? const Color(0xFFFF6B6B)
+                                        : Colors.white,
                                     height: 1.0,
                                   ),
                                 ),
@@ -258,6 +283,28 @@ class _CaloriesTabState extends State<CaloriesTab> {
                                 ),
                               ],
                             ),
+                            if (_kcalBurned > 0) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.local_fire_department_rounded,
+                                    color: Color(0xFFF5A623),
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '$_kcalBurned kcal burned today',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white
+                                          .withValues(alpha: 0.85),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -273,8 +320,7 @@ class _CaloriesTabState extends State<CaloriesTab> {
               ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -310,42 +356,24 @@ class _CaloriesTabState extends State<CaloriesTab> {
             ),
           )
         else
-          SingleChildScrollView(
+          ScrollConfiguration(
+            behavior: const _DragScrollBehavior(),
+            child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: _history.map((item) {
-                return Container(
-                  margin: const EdgeInsets.only(right: 10),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        item.$1,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${item.$2} kcal',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: Colors.black45,
-                        ),
-                      ),
-                    ],
-                  ),
+              children: _history.asMap().entries.map((e) {
+                final i = e.key;
+                final item = e.value;
+                final name = item['name'] as String;
+                final kcal = (item['kcal'] as num).toInt();
+                return _HistoryPill(
+                  name: name,
+                  kcal: kcal,
+                  onDelete: () => _deleteHistoryAt(i, name, kcal),
                 );
               }).toList(),
             ),
+          ),
           ),
       ],
     );
@@ -354,6 +382,12 @@ class _CaloriesTabState extends State<CaloriesTab> {
   // ── Suggestions ───────────────────────────────────────────────────────────
 
   Widget _buildSuggestionSection() {
+    final filtered = SnackRepository.filter(
+      _allSnacks,
+      category: _selectedCategory,
+      maxKcal: _maxKcal,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -389,6 +423,9 @@ class _CaloriesTabState extends State<CaloriesTab> {
                     child: TextField(
                       controller: _searchController,
                       keyboardType: TextInputType.number,
+                      onChanged: (v) => setState(() {
+                        _maxKcal = int.tryParse(v);
+                      }),
                       style: GoogleFonts.inter(
                           fontSize: 13, color: Colors.black87),
                       decoration: const InputDecoration(
@@ -406,39 +443,225 @@ class _CaloriesTabState extends State<CaloriesTab> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(50),
-              ),
-              child: const Icon(Icons.add, size: 20, color: Colors.black87),
-            ),
           ],
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 0.85,
+        // Category chips
+        SizedBox(
+          height: 36,
+          child: ScrollConfiguration(
+            behavior: const _DragScrollBehavior(),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _buildCategoryChip(null, 'All'),
+                for (final cat in SnackRepository.categories)
+                  _buildCategoryChip(cat, cat),
+              ],
+            ),
           ),
-          itemCount: _suggestions.length,
-          itemBuilder: (context, i) {
-            final item = _suggestions[i];
-            return _buildFoodCard(item.$1, item.$2);
-          },
         ),
+        const SizedBox(height: 12),
+        if (filtered.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: Text(
+                'No snacks match the filter',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: filtered.length,
+            itemBuilder: (context, i) => _buildFoodCard(filtered[i]),
+          ),
       ],
     );
   }
 
-  Widget _buildFoodCard(String name, int kcal) {
+  Widget _buildCategoryChip(String? value, String label) {
+    final selected = _selectedCategory == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedCategory = value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFF5A623)
+                : Colors.white.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(50),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : Colors.black87,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _logSnack(Snack snack) async {
+    HapticFeedback.mediumImpact();
+    await UserStorage.addConsumption(name: snack.name, kcal: snack.kcal);
+    final today = DateTime.now();
+    final kcal = await UserStorage.getKcalConsumed(today);
+    final history = await UserStorage.getHistory(today);
+    if (!mounted) return;
+    setState(() {
+      _kcalConsumed = kcal;
+      _history = history;
+    });
+    final remaining = _kcalLimit - kcal;
+    final over = remaining < 0;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          backgroundColor:
+              over ? const Color(0xFFD9534F) : const Color(0xFF2E7D32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+          ),
+          content: Row(
+            children: [
+              Icon(
+                over ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  over
+                      ? '+${snack.kcal} kcal · ${-remaining} over limit'
+                      : '+${snack.kcal} kcal · $remaining left',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'UNDO',
+            textColor: Colors.white,
+            onPressed: () => _undoLastSnack(),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _deleteHistoryAt(int index, String name, int kcal) async {
+    HapticFeedback.mediumImpact();
+    final removed = await UserStorage.removeConsumptionAt(index);
+    if (removed == null) return;
+    final today = DateTime.now();
+    final newKcal = await UserStorage.getKcalConsumed(today);
+    final history = await UserStorage.getHistory(today);
+    if (!mounted) return;
+    setState(() {
+      _kcalConsumed = newKcal;
+      _history = history;
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          backgroundColor: const Color(0xFF424242),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+          ),
+          content: Text(
+            'Removed $name (-$kcal kcal)',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          action: SnackBarAction(
+            label: 'UNDO',
+            textColor: Colors.white,
+            onPressed: () => _restoreEntry(index, removed),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _restoreEntry(int index, Map<String, dynamic> entry) async {
+    final name = entry['name'] as String;
+    final kcal = (entry['kcal'] as num).toInt();
+    await UserStorage.addConsumption(name: name, kcal: kcal);
+    final today = DateTime.now();
+    final newKcal = await UserStorage.getKcalConsumed(today);
+    final history = await UserStorage.getHistory(today);
+    if (!mounted) return;
+    setState(() {
+      _kcalConsumed = newKcal;
+      _history = history;
+    });
+  }
+
+  Future<void> _undoLastSnack() async {
+    HapticFeedback.selectionClick();
+    final removed = await UserStorage.removeConsumptionAt(0);
+    if (removed == null) return;
+    final today = DateTime.now();
+    final kcal = await UserStorage.getKcalConsumed(today);
+    final history = await UserStorage.getHistory(today);
+    if (!mounted) return;
+    setState(() {
+      _kcalConsumed = kcal;
+      _history = history;
+    });
+  }
+
+  static const _categoryColors = {
+    'Biscuits & Cookies': Color(0xFFFFE0B2),
+    'Chips & Savory': Color(0xFFFFCDD2),
+    'Chocolates & Sweets': Color(0xFFD7CCC8),
+    'Noodle Snacks': Color(0xFFFFF59D),
+    'Cakes & Bakery': Color(0xFFF8BBD0),
+  };
+
+  static const _categoryIcons = {
+    'Biscuits & Cookies': Icons.cookie_outlined,
+    'Chips & Savory': Icons.lunch_dining_outlined,
+    'Chocolates & Sweets': Icons.icecream_outlined,
+    'Noodle Snacks': Icons.ramen_dining_outlined,
+    'Cakes & Bakery': Icons.cake_outlined,
+  };
+
+  Widget _buildFoodCard(Snack snack) {
+    final bg = _categoryColors[snack.category] ?? const Color(0xFFF0EDE8);
+    final icon = _categoryIcons[snack.category] ?? Icons.restaurant_rounded;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -456,13 +679,13 @@ class _CaloriesTabState extends State<CaloriesTab> {
         children: [
           Expanded(
             child: Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFFF0EDE8),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
               ),
-              child: const Center(
-                child: Icon(Icons.restaurant_rounded,
-                    size: 40, color: Colors.black26),
+              child: Center(
+                child: Icon(icon, size: 40, color: Colors.black54),
               ),
             ),
           ),
@@ -476,26 +699,27 @@ class _CaloriesTabState extends State<CaloriesTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '$kcal kcal',
+                        '${snack.kcal} kcal · ${snack.serving}',
                         style: GoogleFonts.inter(
-                            fontSize: 12, color: Colors.black45),
+                            fontSize: 11, color: Colors.black45),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        name,
+                        snack.name,
                         style: GoogleFonts.inter(
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
                 GestureDetector(
-                  onTap: () => setState(() {
-                    _kcalConsumed += kcal;
-                    _history.insert(0, (name, kcal));
-                  }),
+                  onTap: () => _logSnack(snack),
                   child: Container(
                     width: 32,
                     height: 32,
@@ -640,6 +864,145 @@ class _CaloriesTabState extends State<CaloriesTab> {
           ),
         );
       }),
+    );
+  }
+}
+
+class _HistoryPill extends StatefulWidget {
+  const _HistoryPill({
+    required this.name,
+    required this.kcal,
+    required this.onDelete,
+  });
+
+  final String name;
+  final int kcal;
+  final VoidCallback onDelete;
+
+  @override
+  State<_HistoryPill> createState() => _HistoryPillState();
+}
+
+class _HistoryPillState extends State<_HistoryPill>
+    with SingleTickerProviderStateMixin {
+  static const _holdDuration = Duration(milliseconds: 500);
+
+  late final AnimationController _ctrl;
+  bool _pressed = false;
+  bool _fired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: _holdDuration);
+    _ctrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed && !_fired) {
+        _fired = true;
+        HapticFeedback.mediumImpact();
+        widget.onDelete();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    _fired = false;
+    setState(() => _pressed = true);
+    _ctrl.forward(from: 0);
+  }
+
+  void _cancel() {
+    setState(() => _pressed = false);
+    _ctrl.stop();
+    _ctrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _start(),
+      onTapUp: (_) => _cancel(),
+      onTapCancel: _cancel,
+      child: AnimatedScale(
+        scale: _pressed ? 0.94 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (context, child) {
+            final t = _ctrl.value;
+            final bg = Color.lerp(
+              Colors.white,
+              const Color(0xFFFFCDD2),
+              t,
+            )!;
+            return Container(
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(50),
+                border: Border.all(
+                  color: const Color(0xFFD9534F).withValues(alpha: t),
+                  width: 1.5,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    child: child,
+                  ),
+                  if (t > 0)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(50),
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: t,
+                            heightFactor: 1,
+                            child: Container(
+                              color: const Color(0xFFD9534F)
+                                  .withValues(alpha: 0.18),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.name,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${widget.kcal} kcal',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: Colors.black45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
