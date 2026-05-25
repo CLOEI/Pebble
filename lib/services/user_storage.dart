@@ -47,6 +47,7 @@ class UserStorage {
     await _prefs.setInt(_keyAge, age);
     await _prefs.setInt(_keyWeight, weight);
     await _prefs.setInt(_keyHeight, height);
+    _notifyChanged();
   }
 
   static Future<void> saveSurvey(List<int> selections) async {
@@ -56,6 +57,7 @@ class UserStorage {
     );
     await _saveFtueDate();
     await _prefs.setBool(_keyOnboardingDone, true);
+    _notifyChanged();
   }
 
   static Future<void> _saveFtueDate() async {
@@ -80,8 +82,10 @@ class UserStorage {
 
   static Future<void> markDayActive(String dateStr) async {
     final days = await getActiveDays();
+    if (days.contains(dateStr)) return;
     days.add(dateStr);
     await _prefs.setString(_keyActiveDays, days.join(','));
+    _notifyChanged();
   }
 
   // ── Daily kcal + history ────────────────────────────────────────────────
@@ -115,6 +119,7 @@ class UserStorage {
       'ts': day.toIso8601String(),
     });
     await _prefs.setString(_historyKey(day), jsonEncode(history));
+    _notifyChanged();
   }
 
   // ── Daily workout log + kcal burned ─────────────────────────────────────
@@ -137,6 +142,7 @@ class UserStorage {
     required String name,
     required int durationSec,
     required int kcal,
+    int expGain = 0,
     DateTime? when,
   }) async {
     final day = when ?? DateTime.now();
@@ -149,9 +155,23 @@ class UserStorage {
       'name': name,
       'durationSec': durationSec,
       'kcal': kcal,
+      'exp': expGain,
       'ts': day.toIso8601String(),
     });
     await _prefs.setString(_workoutKey(day), jsonEncode(log));
+
+    if (expGain > 0) {
+      final currentExp = await getExp();
+      await _prefs.setInt(_keyExp, currentExp + expGain);
+    }
+
+    final dayKey = _dateKey(day);
+    final days = await getActiveDays();
+    if (!days.contains(dayKey)) {
+      days.add(dayKey);
+      await _prefs.setString(_keyActiveDays, days.join(','));
+    }
+
     _notifyChanged();
   }
 
@@ -167,6 +187,7 @@ class UserStorage {
     final current = await getKcalConsumed(day);
     await _prefs.setInt(_kcalKey(day), (current - kcal).clamp(0, 1 << 30));
     await _prefs.setString(_historyKey(day), jsonEncode(history));
+    _notifyChanged();
     return removed;
   }
 
@@ -178,10 +199,24 @@ class UserStorage {
     return raw.split(',').map(int.parse).toSet();
   }
 
+  // ── Daily celebration flag ──────────────────────────────────────────────
+
+  static String _celebratedKey(DateTime d) => 'celebrated_${_dateKey(d)}';
+
+  static Future<bool> wasCelebrated(DateTime day) async {
+    return await _prefs.getBool(_celebratedKey(day)) ?? false;
+  }
+
+  static Future<void> markCelebrated(DateTime day) async {
+    await _prefs.setBool(_celebratedKey(day), true);
+  }
+
   static Future<void> unlockPebble(int index) async {
     final set = await getUnlockedPebbles();
+    if (set.contains(index)) return;
     set.add(index);
     await _prefs.setString(_keyUnlockedPebbles, set.join(','));
+    _notifyChanged();
   }
 
   // ── EXP ──────────────────────────────────────────────────────────────────
@@ -191,8 +226,10 @@ class UserStorage {
   }
 
   static Future<void> addExp(int amount) async {
+    if (amount <= 0) return;
     final current = await getExp();
     await _prefs.setInt(_keyExp, current + amount);
+    _notifyChanged();
   }
 
   // ── Full load ────────────────────────────────────────────────────────────

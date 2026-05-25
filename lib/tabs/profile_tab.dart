@@ -16,6 +16,7 @@ class _ProfileTabState extends State<ProfileTab> {
   DateTime? _ftueDate;
   int _exp = 0;
   int _currentWeekPage = 0;
+  bool _todayCompleted = false;
   late final PageController _weekController;
 
   static const _expPerLevel = 500;
@@ -90,6 +91,7 @@ class _ProfileTabState extends State<ProfileTab> {
     final activeDays = await UserStorage.getActiveDays();
     final ftueDateStr = await UserStorage.getFtueDate();
     final exp = await UserStorage.getExp();
+    final todayCompleted = await UserStorage.wasCelebrated(DateTime.now());
 
     final ftueDate =
         ftueDateStr != null ? DateTime.parse(ftueDateStr) : DateTime.now();
@@ -101,6 +103,7 @@ class _ProfileTabState extends State<ProfileTab> {
       _ftueDate = ftueDate;
       _exp = exp;
       _currentWeekPage = weekCount - 1;
+      _todayCompleted = todayCompleted;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -619,7 +622,8 @@ class _ProfileTabState extends State<ProfileTab> {
         final isFuture = day.isAfter(today);
         final isBeforeFtue =
             _ftueDate != null && day.isBefore(_ftueDate!) && !isToday;
-        final isActive = _activeDays.contains(key);
+        final isActive =
+            _activeDays.contains(key) || (isToday && _todayCompleted);
 
         return _buildDayCell(
           label: _dayLabels[i],
@@ -641,7 +645,8 @@ class _ProfileTabState extends State<ProfileTab> {
     required bool isBeforeFtue,
     required bool isActive,
   }) {
-    final showPebble = !isToday && !isFuture && !isBeforeFtue;
+    final showPebble =
+        !isFuture && !isBeforeFtue && (!isToday || isActive);
 
     return SizedBox(
       width: 44,

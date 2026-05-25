@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/user_storage.dart';
 import '../services/workout_repository.dart';
 import '../workout_detail_page.dart';
+import '../celebration_dialog.dart';
 
 class TodoTab extends StatefulWidget {
   const TodoTab({super.key});
@@ -21,6 +22,7 @@ class _TodoTabState extends State<TodoTab> {
 
   int _kcalBurned = 0;
   int _burnGoal = 200;
+  bool _todayCompleted = false;
   List<Map<String, dynamic>> _workoutLog = [];
   WeekPlan? _weekPlan;
   List<Exercise> _todayExercises = [];
@@ -49,15 +51,75 @@ class _TodoTabState extends State<TodoTab> {
 
   Future<void> _openExercise(Exercise ex) async {
     final weight = (_userData?['weight'] as int?) ?? 70;
+    final beforeExp = _exp;
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) =>
             WorkoutDetailPage(exercise: ex, weightKg: weight),
       ),
     );
-    if (result == true) {
-      await _loadData();
+    if (result != true) return;
+    await _loadData();
+    if (!mounted) return;
+    final gained = _exp - beforeExp;
+
+    final today = DateTime.now();
+    final pendingNow = _todayExercises
+        .where((e) => !_isCompleted(e.id))
+        .toList();
+    final allDone = _todayExercises.isNotEmpty && pendingNow.isEmpty;
+    final celebrated = await UserStorage.wasCelebrated(today);
+
+    if (allDone && !celebrated) {
+      await UserStorage.markCelebrated(today);
+      final totalBurned = await UserStorage.getKcalBurned(today);
+      final log = await UserStorage.getWorkoutLog(today);
+      final totalExp = log.fold<int>(
+        0,
+        (sum, w) => sum + ((w['exp'] as num?)?.toInt() ?? 0),
+      );
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      await showDayCompleteDialog(
+        context,
+        totalKcalBurned: totalBurned,
+        totalExp: totalExp,
+      );
+      return;
     }
+
+    if (gained <= 0) return;
+    if (!mounted) return;
+    // ignore: use_build_context_synchronously
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          backgroundColor: const Color(0xFF2E7D32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+          ),
+          content: Row(
+            children: [
+              const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '+$gained EXP · ${ex.name} done',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
   }
 
   @override
@@ -87,6 +149,7 @@ class _TodoTabState extends State<TodoTab> {
     final today = DateTime.now();
     final kcalBurned = await UserStorage.getKcalBurned(today);
     final log = await UserStorage.getWorkoutLog(today);
+    final todayCompleted = await UserStorage.wasCelebrated(today);
 
     final ftueDate =
         ftueDateStr != null ? DateTime.parse(ftueDateStr) : DateTime.now();
@@ -107,6 +170,7 @@ class _TodoTabState extends State<TodoTab> {
       _workoutLog = log;
       _weekPlan = plan;
       _todayExercises = todayExercises;
+      _todayCompleted = todayCompleted;
       _burnGoal = _computeBurnGoal(todayExercises, userData);
     });
 
@@ -153,9 +217,9 @@ class _TodoTabState extends State<TodoTab> {
   @override
   Widget build(BuildContext context) {
     if (_userData == null) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF5BA3D9),
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      return const ColoredBox(
+        color: Color(0xFF5BA3D9),
+        child: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
 
@@ -163,12 +227,10 @@ class _TodoTabState extends State<TodoTab> {
     final pebble = _userData!['pebbleIndex'] as int? ?? 0;
     final expression = _userData!['expressionIndex'] as int? ?? 0;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset('assets/Sky.png', fit: BoxFit.cover),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset('assets/Sky.png', fit: BoxFit.cover),
           Align(
             alignment: Alignment.bottomCenter,
             child: Image.asset(
@@ -313,8 +375,7 @@ class _TodoTabState extends State<TodoTab> {
               ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -681,7 +742,8 @@ class _TodoTabState extends State<TodoTab> {
         final isFuture = day.isAfter(today);
         final isBeforeFtue =
             _ftueDate != null && day.isBefore(_ftueDate!) && !isToday;
-        final isActive = _activeDays.contains(key);
+        final isActive =
+            _activeDays.contains(key) || (isToday && _todayCompleted);
 
         return _buildDayCell(
           label: _dayLabels[i],
@@ -703,7 +765,8 @@ class _TodoTabState extends State<TodoTab> {
     required bool isBeforeFtue,
     required bool isActive,
   }) {
-    final showPebble = !isToday && !isFuture && !isBeforeFtue;
+    final showPebble =
+        !isFuture && !isBeforeFtue && (!isToday || isActive);
 
     return SizedBox(
       width: 44,

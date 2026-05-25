@@ -160,6 +160,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
       name: widget.exercise.name,
       durationSec: duration,
       kcal: kcal,
+      expGain: kcal,
     );
     if (!mounted) return;
     Navigator.of(context).pop(true);

@@ -34,6 +34,7 @@ class _CaloriesTabState extends State<CaloriesTab> {
 
   int _kcalConsumed = 0;
   int _kcalBurned = 0;
+  bool _todayCompleted = false;
   List<Map<String, dynamic>> _history = [];
 
   List<Snack> _allSnacks = [];
@@ -76,6 +77,7 @@ class _CaloriesTabState extends State<CaloriesTab> {
     final kcalConsumed = await UserStorage.getKcalConsumed(today);
     final history = await UserStorage.getHistory(today);
     final kcalBurned = await UserStorage.getKcalBurned(today);
+    final todayCompleted = await UserStorage.wasCelebrated(today);
 
     final ftueDate =
         ftueDateStr != null ? DateTime.parse(ftueDateStr) : DateTime.now();
@@ -90,6 +92,7 @@ class _CaloriesTabState extends State<CaloriesTab> {
       _allSnacks = snacks;
       _kcalConsumed = kcalConsumed;
       _kcalBurned = kcalBurned;
+      _todayCompleted = todayCompleted;
       _history = history;
     });
 
@@ -754,7 +757,8 @@ class _CaloriesTabState extends State<CaloriesTab> {
         final isFuture = day.isAfter(today);
         final isBeforeFtue =
             _ftueDate != null && day.isBefore(_ftueDate!) && !isToday;
-        final isActive = _activeDays.contains(key);
+        final isActive =
+            _activeDays.contains(key) || (isToday && _todayCompleted);
 
         return _buildDayCell(
           label: _dayLabels[i],
@@ -776,7 +780,8 @@ class _CaloriesTabState extends State<CaloriesTab> {
     required bool isBeforeFtue,
     required bool isActive,
   }) {
-    final showPebble = !isToday && !isFuture && !isBeforeFtue;
+    final showPebble =
+        !isFuture && !isBeforeFtue && (!isToday || isActive);
 
     return SizedBox(
       width: 44,

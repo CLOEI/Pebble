@@ -19,28 +19,8 @@ class _ReportTabState extends State<ReportTab> {
 
   static const _dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-  // Mock weight trend data (kg over weeks)
-  static const _weightTrend = [
-    (0.0, 85.0), (7.0, 83.5), (14.0, 82.0), (21.0, 80.5),
-    (28.0, 79.0), (35.0, 78.0), (42.0, 76.5), (49.0, 75.0),
-  ];
-
-  // Mock weekly calorie data
-  static const _calorieConsumed = [
-    (0.0, 2600.0), (1.0, 2500.0), (2.0, 2700.0),
-    (3.0, 2450.0), (4.0, 2550.0), (5.0, 2800.0), (6.0, 1050.0),
-  ];
-  static const _calorieBurned = [
-    (0.0, 2500.0), (1.0, 2450.0), (2.0, 2400.0),
-    (3.0, 2600.0), (4.0, 2500.0), (5.0, 2700.0), (6.0, 350.0),
-  ];
-
-  // Mock daily details
-  static const _dailyDetails = [
-    ('Mar 25', '+700', 1050, 350),
-    ('Mar 24', '-100', 2850, 2950),
-    ('Mar 23', '+200', 2400, 2200),
-  ];
+  List<({DateTime date, int consumed, int burned})> _dailyKcal = [];
+  bool _todayCompleted = false;
 
   @override
   void initState() {
@@ -68,11 +48,26 @@ class _ReportTabState extends State<ReportTab> {
         ftueDateStr != null ? DateTime.parse(ftueDateStr) : DateTime.now();
     final weekCount = _weekCount(ftueDate);
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final List<({DateTime date, int consumed, int burned})> daily = [];
+    for (int i = 6; i >= 0; i--) {
+      final d = today.subtract(Duration(days: i));
+      daily.add((
+        date: d,
+        consumed: await UserStorage.getKcalConsumed(d),
+        burned: await UserStorage.getKcalBurned(d),
+      ));
+    }
+    final todayCompleted = await UserStorage.wasCelebrated(today);
+
     setState(() {
       _userData = userData;
       _activeDays = activeDays;
       _ftueDate = ftueDate;
       _currentWeekPage = weekCount - 1;
+      _dailyKcal = daily;
+      _todayCompleted = todayCompleted;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -116,11 +111,9 @@ class _ReportTabState extends State<ReportTab> {
     final pebble = _userData!['pebbleIndex'] as int? ?? 0;
     final expression = _userData!['expressionIndex'] as int? ?? 0;
     final startingWeight = _userData!['weight'] as int? ?? 0;
-    final currentWeight = startingWeight - 2; // mock 2kg lost
-    final lost = startingWeight - currentWeight;
-    final lostPct = startingWeight > 0
-        ? (lost / startingWeight * 100).toStringAsFixed(2)
-        : '0.00';
+    final currentWeight = startingWeight;
+    final lost = 0;
+    final lostPct = '0.00';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -235,13 +228,20 @@ class _ReportTabState extends State<ReportTab> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // Weight Trend chart
+                  // Weight Trend placeholder
                   _buildCard(
                     title: 'Weight Trend',
                     icon: null,
                     child: SizedBox(
-                      height: 180,
-                      child: _buildWeightChart(),
+                      height: 120,
+                      child: Center(
+                        child: Text(
+                          'Weight log not started.\nTrend appears after multiple weigh-ins.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                              fontSize: 12, color: Colors.black45),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -282,7 +282,7 @@ class _ReportTabState extends State<ReportTab> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ..._dailyDetails.map((d) => _buildDailyRow(d)),
+                  ..._buildDailyRows(),
                 ],
               ),
             ),
@@ -329,96 +329,33 @@ class _ReportTabState extends State<ReportTab> {
 
   // ── Charts ────────────────────────────────────────────────────────────────
 
-  Widget _buildWeightChart() {
-    final spots = _weightTrend
-        .map((p) => FlSpot(p.$1, p.$2))
-        .toList();
-
-    return LineChart(
-      LineChartData(
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: 5,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: Colors.black.withValues(alpha: 0.06),
-            strokeWidth: 1,
-          ),
-        ),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 5,
-              reservedSize: 32,
-              getTitlesWidget: (v, _) => Text(
-                v.toInt().toString(),
-                style: GoogleFonts.inter(
-                    fontSize: 10, color: Colors.black38),
-              ),
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 14,
-              getTitlesWidget: (v, _) {
-                if (_ftueDate == null) return const SizedBox();
-                final d =
-                    _ftueDate!.add(Duration(days: v.toInt()));
-                const months = [
-                  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-                ];
-                return Text(
-                  '${months[d.month - 1]} ${d.day}',
-                  style: GoogleFonts.inter(
-                      fontSize: 9, color: Colors.black38),
-                );
-              },
-            ),
-          ),
-          rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false)),
-        ),
-        borderData: FlBorderData(show: false),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: const Color(0xFF4CAF50),
-            barWidth: 2.5,
-            dotData: FlDotData(
-              show: true,
-              getDotPainter: (_, _, _, _) => FlDotCirclePainter(
-                radius: 4,
-                color: const Color(0xFF4CAF50),
-                strokeWidth: 0,
-              ),
-            ),
-            belowBarData: BarAreaData(show: false),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildCalorieChart() {
-    final consumedSpots =
-        _calorieConsumed.map((p) => FlSpot(p.$1, p.$2)).toList();
-    final burnedSpots =
-        _calorieBurned.map((p) => FlSpot(p.$1, p.$2)).toList();
-
-    const weekDays = ['Mar 19', 'Mar 20', 'Mar 21', 'Mar 22', 'Mar 23', 'Mar 24', 'Mar 25'];
+    final consumedSpots = <FlSpot>[];
+    final burnedSpots = <FlSpot>[];
+    final weekDays = <String>[];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    for (int i = 0; i < _dailyKcal.length; i++) {
+      final d = _dailyKcal[i];
+      consumedSpots.add(FlSpot(i.toDouble(), d.consumed.toDouble()));
+      burnedSpots.add(FlSpot(i.toDouble(), d.burned.toDouble()));
+      weekDays.add('${months[d.date.month - 1]} ${d.date.day}');
+    }
+    final maxValue = [
+      ...consumedSpots.map((s) => s.y),
+      ...burnedSpots.map((s) => s.y),
+      1000.0,
+    ].reduce((a, b) => a > b ? a : b);
+    final interval = (maxValue / 4).ceilToDouble().clamp(200.0, 2000.0);
 
     return LineChart(
       LineChartData(
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          horizontalInterval: 800,
+          horizontalInterval: interval,
           getDrawingHorizontalLine: (_) => FlLine(
             color: Colors.black.withValues(alpha: 0.06),
             strokeWidth: 1,
@@ -428,7 +365,7 @@ class _ReportTabState extends State<ReportTab> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              interval: 800,
+              interval: interval,
               reservedSize: 36,
               getTitlesWidget: (v, _) => Text(
                 v.toInt().toString(),
@@ -516,74 +453,107 @@ class _ReportTabState extends State<ReportTab> {
 
   // ── Daily detail row ──────────────────────────────────────────────────────
 
-  Widget _buildDailyRow((String, String, int, int) d) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  d.$1,
-                  style: GoogleFonts.inter(
-                      fontSize: 14, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'Net: ${d.$2} kcal',
-                  style: GoogleFonts.inter(
-                      fontSize: 11, color: Colors.black45),
-                ),
-              ],
+  List<Widget> _buildDailyRows() {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final recent = _dailyKcal.reversed
+        .where((d) => d.consumed > 0 || d.burned > 0)
+        .take(3)
+        .toList();
+    if (recent.isEmpty) {
+      return [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'No activity logged yet',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
             ),
           ),
-          Row(
-            children: [
-              const Icon(Icons.arrow_upward_rounded,
-                  color: Color(0xFFF5A623), size: 16),
-              Text(
-                '${d.$3}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFFF5A623),
-                ),
+        ),
+      ];
+    }
+    return recent.map((d) {
+      final net = d.consumed - d.burned;
+      final netStr = (net >= 0 ? '+' : '') + net.toString();
+      final dateLabel = '${months[d.date.month - 1]} ${d.date.day}';
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dateLabel,
+                    style: GoogleFonts.inter(
+                        fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Net: $netStr kcal',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: net > 0
+                          ? const Color(0xFFD9534F)
+                          : Colors.black45,
+                    ),
+                  ),
+                ],
               ),
-              Text(' kcal',
+            ),
+            Row(
+              children: [
+                const Icon(Icons.arrow_upward_rounded,
+                    color: Color(0xFFF5A623), size: 16),
+                Text(
+                  '${d.consumed}',
                   style: GoogleFonts.inter(
-                      fontSize: 11, color: Colors.black45)),
-              const SizedBox(width: 12),
-              const Icon(Icons.arrow_downward_rounded,
-                  color: Colors.black54, size: 16),
-              Text(
-                '${d.$4}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFFF5A623),
+                  ),
                 ),
-              ),
-              Text(' kcal',
+                Text(' kcal',
+                    style: GoogleFonts.inter(
+                        fontSize: 11, color: Colors.black45)),
+                const SizedBox(width: 12),
+                const Icon(Icons.arrow_downward_rounded,
+                    color: Colors.black54, size: 16),
+                Text(
+                  '${d.burned}',
                   style: GoogleFonts.inter(
-                      fontSize: 11, color: Colors.black45)),
-            ],
-          ),
-        ],
-      ),
-    );
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                Text(' kcal',
+                    style: GoogleFonts.inter(
+                        fontSize: 11, color: Colors.black45)),
+              ],
+            ),
+          ],
+        ),
+      );
+    }).toList();
   }
 
   // ── Shared card wrapper ───────────────────────────────────────────────────
@@ -644,7 +614,8 @@ class _ReportTabState extends State<ReportTab> {
         final isFuture = day.isAfter(today);
         final isBeforeFtue =
             _ftueDate != null && day.isBefore(_ftueDate!) && !isToday;
-        final isActive = _activeDays.contains(key);
+        final isActive =
+            _activeDays.contains(key) || (isToday && _todayCompleted);
 
         return _buildDayCell(
           label: _dayLabels[i],
@@ -666,7 +637,8 @@ class _ReportTabState extends State<ReportTab> {
     required bool isBeforeFtue,
     required bool isActive,
   }) {
-    final showPebble = !isToday && !isFuture && !isBeforeFtue;
+    final showPebble =
+        !isFuture && !isBeforeFtue && (!isToday || isActive);
     return SizedBox(
       width: 44,
       child: Column(

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/user_storage.dart';
+import '../services/snack_repository.dart';
+import '../services/workout_repository.dart';
+import '../workout_detail_page.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -19,21 +22,17 @@ class _HomeTabState extends State<HomeTab> {
 
   int _kcalConsumed = 0;
   int _kcalBurned = 0;
+  bool _todayCompleted = false;
 
   static const _expPerLevel = 500;
   static const _kcalLimit = 3000;
   static const _burnGoal = 2000;
   static const _dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-  static const _quickSelections = [
-    ('Egg Soup', 50),
-    ('Chicken rice', 150),
-  ];
+  static const _quickSnackIds = ['SNK-017', 'SNK-012', 'SNK-046'];
 
-  static const _tasks = [
-    ('Burn 300 kcal', 50),
-    ('Consume kcal less than limit', 50),
-  ];
+  List<Snack> _quickSelections = [];
+  List<Exercise> _pendingTasks = [];
 
   @override
   void initState() {
@@ -57,11 +56,34 @@ class _HomeTabState extends State<HomeTab> {
     final activeDays = await UserStorage.getActiveDays();
     final ftueDateStr = await UserStorage.getFtueDate();
     final exp = await UserStorage.getExp();
+    final today = DateTime.now();
+    final kcalConsumed = await UserStorage.getKcalConsumed(today);
+    final kcalBurned = await UserStorage.getKcalBurned(today);
+    final todayCompleted = await UserStorage.wasCelebrated(today);
+    final allSnacks = await SnackRepository.loadAll();
+    final exercises = await WorkoutRepository.loadExercises();
+    final plans = await WorkoutRepository.loadPlan();
+    final workoutLog = await UserStorage.getWorkoutLog(today);
+
+    final snackById = {for (final s in allSnacks) s.id: s};
+    final quickSnacks = _quickSnackIds
+        .map((id) => snackById[id])
+        .where((s) => s != null)
+        .cast<Snack>()
+        .toList();
 
     final ftueDate = ftueDateStr != null
         ? DateTime.parse(ftueDateStr)
         : DateTime.now();
     final weekCount = _weekCount(ftueDate);
+
+    final workoutWeek = WorkoutRepository.currentWeek(ftueDate);
+    final plan = WorkoutRepository.planForWeek(plans, workoutWeek);
+    final todayExercises =
+        WorkoutRepository.exercisesByIds(exercises, plan.exerciseIds);
+    final doneIds = workoutLog.map((w) => w['exerciseId'] as String).toSet();
+    final pending =
+        todayExercises.where((e) => !doneIds.contains(e.id)).take(2).toList();
 
     setState(() {
       _userData = userData;
@@ -69,6 +91,11 @@ class _HomeTabState extends State<HomeTab> {
       _ftueDate = ftueDate;
       _exp = exp;
       _currentWeekPage = weekCount - 1;
+      _kcalConsumed = kcalConsumed;
+      _kcalBurned = kcalBurned;
+      _todayCompleted = todayCompleted;
+      _quickSelections = quickSnacks;
+      _pendingTasks = pending;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -127,6 +154,16 @@ class _HomeTabState extends State<HomeTab> {
 
   int get _level => (_exp ~/ _expPerLevel) + 1;
   int get _expInLevel => _exp % _expPerLevel;
+
+  Future<void> _openExercise(Exercise ex) async {
+    final weight = (_userData?['weight'] as int?) ?? 70;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            WorkoutDetailPage(exercise: ex, weightKg: weight),
+      ),
+    );
+  }
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -226,7 +263,8 @@ class _HomeTabState extends State<HomeTab> {
         final isFuture = day.isAfter(today);
         final isBeforeFtue =
             _ftueDate != null && day.isBefore(_ftueDate!) && !isToday;
-        final isActive = _activeDays.contains(key);
+        final isActive =
+            _activeDays.contains(key) || (isToday && _todayCompleted);
 
         return _buildDayCell(
           label: _dayLabels[i],
@@ -248,7 +286,8 @@ class _HomeTabState extends State<HomeTab> {
     required bool isBeforeFtue,
     required bool isActive,
   }) {
-    final showPebble = !isToday && !isFuture && !isBeforeFtue;
+    final showPebble =
+        !isFuture && !isBeforeFtue && (!isToday || isActive);
 
     return SizedBox(
       width: 44,
@@ -507,12 +546,12 @@ class _HomeTabState extends State<HomeTab> {
   // ── Kcal left card ────────────────────────────────────────────────────────
 
   Widget _buildKcalLeftCard() {
-    final kcalLeft = (_kcalLimit - _kcalConsumed).clamp(0, _kcalLimit);
+    final kcalLeft = _kcalLimit - _kcalConsumed;
     return _buildKcalCard(
       number: kcalLeft,
       total: _kcalLimit,
       label: 'kcal left',
-      onAdd: (v) => setState(() => _kcalConsumed += v),
+      onAdd: (v) => UserStorage.addConsumption(name: 'Manual', kcal: v),
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -526,7 +565,10 @@ class _HomeTabState extends State<HomeTab> {
             runSpacing: 8,
             children: _quickSelections.map((item) {
               return GestureDetector(
-                onTap: () => setState(() => _kcalConsumed += item.$2),
+                onTap: () => UserStorage.addConsumption(
+                  name: item.name,
+                  kcal: item.kcal,
+                ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -542,7 +584,7 @@ class _HomeTabState extends State<HomeTab> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        item.$1,
+                        item.name,
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -551,7 +593,7 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        '${item.$2} kcal',
+                        '${item.kcal} kcal',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: Colors.black45,
@@ -575,7 +617,13 @@ class _HomeTabState extends State<HomeTab> {
       number: _kcalBurned,
       total: _burnGoal,
       label: 'kcal burned',
-      onAdd: (v) => setState(() => _kcalBurned += v),
+      onAdd: (v) => UserStorage.addWorkout(
+        exerciseId: 'CUSTOM',
+        name: 'Manual',
+        durationSec: 0,
+        kcal: v,
+        expGain: v,
+      ),
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -584,53 +632,80 @@ class _HomeTabState extends State<HomeTab> {
             style: GoogleFonts.inter(fontSize: 13, color: Colors.black45),
           ),
           const SizedBox(height: 10),
-          ..._tasks.map((task) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
+          if (_pendingTasks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'All workouts done for today',
+                style: GoogleFonts.inter(
+                    fontSize: 13, color: Colors.black45),
               ),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Colors.black.withValues(alpha: 0.1),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      task.$1,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                  Container(
+            )
+          else
+            ..._pendingTasks.map((ex) {
+              final weight = (_userData?['weight'] as int?) ?? 70;
+              final expGain = ex.kcalForWeight(weight);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GestureDetector(
+                  onTap: () => _openExercise(ex),
+                  child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
+                      horizontal: 16,
+                      vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(50),
-                    ),
-                    child: Text(
-                      '${task.$2} Exp',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.1),
                       ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                ex.name,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              Text(
+                                ex.detail,
+                                style: GoogleFonts.inter(
+                                    fontSize: 11, color: Colors.black45),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          child: Text(
+                            '$expGain Exp',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          )),
+                ),
+              );
+            }),
         ],
       ),
     );
